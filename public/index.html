@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Shopify GraphQL Data Extractor</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="container mt-4">
+    <div class="row mb-4">
+      <div class="col-12">
+        <div class="card">
+          <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+            <h5 class="mb-0">Shopify GraphQL Data Extractor</h5>
+            <div>
+              <span id="connection-status" class="badge bg-danger">Disconnected</span>
+            </div>
+          </div>
+          <div class="card-body">
+            <form id="connection-form">
+              <div class="row g-3">
+                <div class="col-md-4">
+                  <label for="store-name" class="form-label">Store Name</label>
+                  <input type="text" class="form-control" id="store-name" placeholder="your-store" required>
+                  <div class="form-text">Your store name without .myshopify.com</div>
+                </div>
+                <div class="col-md-4">
+                  <label for="client-id" class="form-label">API Key / Client ID</label>
+                  <input type="text" class="form-control" id="client-id" required>
+                </div>
+                <div class="col-md-4">
+                  <label for="access-token" class="form-label">Access Token</label>
+                  <input type="password" class="form-control" id="access-token" required>
+                </div>
+                <div class="col-md-4">
+                  <label for="api-version" class="form-label">API Version</label>
+                  <select class="form-select" id="api-version" required>
+                    <option value="2025-01" selected>2025-01 (Latest)</option>
+                    <option value="2024-10">2024-10</option>
+                    <option value="2024-07">2024-07</option>
+                    <option value="2024-04">2024-04</option>
+                    <option value="2024-01">2024-01</option>
+                    <option value="2023-10">2023-10</option>
+                    <option value="2023-07">2023-07</option>
+                    <option value="2023-04">2023-04</option>
+                  </select>
+                  <div class="form-text">Always uses the selected version for all API calls</div>
+                </div>
+                <div class="col-12 d-flex justify-content-between align-items-center">
+                  <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="always-latest" checked>
+                    <label class="form-check-label" for="always-latest">
+                      Always use latest available API version
+                    </label>
+                  </div>
+                  <button type="submit" class="btn btn-primary" id="connect-btn">
+                    <i class="bi bi-plug-fill me-1"></i> Connect to Shopify
+                  </button>
+                </div>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Predefined API Queries Section -->
+    <div class="row mb-4" id="predefined-queries-section" style="display: none;">
+      <div class="col-12">
+        <div class="card">
+          <div class="card-header bg-primary text-white">
+            <h5 class="mb-0">Predefined Data Extraction</h5>
+          </div>
+          <div class="card-body">
+            <p class="text-muted mb-4">Quickly extract common Shopify data with predefined queries. Click any option below to start the extraction.</p>
+            
+            <div class="row gx-4 gy-4">
+              <!-- Products & Variants Extraction -->
+              <div class="col-md-4">
+                <div class="card h-100">
+                  <div class="card-header bg-light">
+                    <h5 class="mb-0">
+                      <i class="bi bi-box-seam me-2"></i>Products & Variants
+                    </h5>
+                  </div>
+                  <div class="card-body">
+                    <p class="card-text">Extract all products with their variants, images, prices, and inventory information.</p>
+                    <div class="text-muted mb-3">
+                      <small>
+                        <strong>Includes:</strong> ID, title, handle, description, images, variants, prices, inventory, metafields
+                      </small>
+                    </div>
+                  </div>
+                  <div class="card-footer">
+                    <button class="btn btn-primary w-100 predefined-extract-btn" data-type="products">
+                      <i class="bi bi-download me-1"></i> Extract Products Data
+                    </button>
+                  </div>
+                </div>
+              </div>
+              
+              <!-- Orders Extraction -->
+              <div class="col-md-4">
+                <div class="card h-100">
+                  <div class="card-header bg-light">
+                    <h5 class="mb-0">
+                      <i class="bi bi-bag-check me-2"></i>Orders & Line Items
+                    </h5>
+                  </div>
+                  <div class="card-body">
+                    <p class="card-text">Extract all orders with their line items, shipping, payment, and customer information.</p>
+                    <div class="text-muted mb-3">
+                      <small>
+                        <strong>Includes:</strong> Order ID, date, status, totals, line items, customer details, addresses, transactions
+                      </small>
+                    </div>
+                  </div>
+                  <div class="card-footer">
+                    <button class="btn btn-primary w-100 predefined-extract-btn" data-type="orders">
+                      <i class="bi bi-download me-1"></i> Extract Orders Data
+                    </button>
+                  </div>
+                </div>
+              </div>
+              
+              <!-- Customers Extraction -->
+              <div class="col-md-4">
+                <div class="card h-100">
+                  <div class="card-header bg-light">
+                    <h5 class="mb-0">
+                      <i class="bi bi-people me-2"></i>Customers & Addresses
+                    </h5>
+                  </div>
+                  <div class="card-body">
+                    <p class="card-text">Extract all customer profiles with their contact details, addresses, and order summaries.</p>
+                    <div class="text-muted mb-3">
+                      <small>
+                        <strong>Includes:</strong> ID, name, email, phone, addresses, order history, total spent, tags, metafields
+                      </small>
+                    </div>
+                  </div>
+                  <div class="card-footer">
+                    <button class="btn btn-primary w-100 predefined-extract-btn" data-type="customers">
+                      <i class="bi bi-download me-1"></i> Extract Customers Data
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            <div class="mt-4 text-center">
+              <button id="custom-extraction-btn" class="btn btn-outline-secondary">
+                <i class="bi bi-sliders me-1"></i> Create Custom Extraction
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  
+    <!-- API Selection Section - Initially Hidden -->
+    <div class="row mb-4" id="api-selection-section" style="display: none;">
+      <div class="col-12">
+        <div class="card">
+          <div class="card-header bg-success text-white d-flex justify-content-between align-items-center">
+            <h5 class="mb-0">Available API Resources</h5>
+            <button id="back-to-predefined-btn" class="btn btn-sm btn-light">
+              <i class="bi bi-arrow-left me-1"></i> Back to Predefined Queries
+            </button>
+          </div>
+          <div class="card-body">
+            <div class="d-flex justify-content-between mb-3">
+              <span class="text-muted">Select an API resource to extract data from</span>
+              <button id="fetch-schema-btn" class="btn btn-success btn-sm">
+                <i class="bi bi-arrow-repeat me-1"></i> Fetch Available APIs
+              </button>
+            </div>
+            <div id="schema-loading" class="text-center py-5" style="display: none;">
+              <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Loading...</span>
+              </div>
+              <p class="mt-2">Fetching schema information...</p>
+            </div>
+            <div id="api-list-container" style="display: none;">
+              <table class="table table-hover" id="api-list-table">
+                <thead>
+                  <tr>
+                    <th>API Resource</th>
+                    <th>Type</th>
+                    <th>Description</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody id="api-list-body">
+                  <!-- API resources will be listed here -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Field Selection Section - Initially Hidden -->
+    <div class="row mb-4" id="field-selection-section" style="display: none;">
+      <div class="col-12">
+        <div class="card">
+          <div class="card-header bg-info text-white d-flex justify-content-between align-items-center">
+            <h5 class="mb-0">Select Fields to Extract - <span id="selected-resource-name">Resource</span></h5>
+            <button id="back-to-apis-btn" class="btn btn-sm btn-light">
+              <i class="bi bi-arrow-left me-1"></i> Back to API List
+            </button>
+          </div>
+          <div class="card-body">
+            <div id="fields-loading" class="text-center py-5" style="display: none;">
+              <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Loading...</span>
+              </div>
+              <p class="mt-2">Fetching available fields...</p>
+            </div>
+            <div id="fields-container" style="display: none;">
+              <div class="row mb-3">
+                <div class="col-md-6">
+                  <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" id="select-all-fields">
+                    <label class="form-check-label" for="select-all-fields">Select All Fields</label>
+                  </div>
+                </div>
+                <div class="col-md-6 text-end">
+                  <button id="extract-data-btn" class="btn btn-primary">
+                    <i class="bi bi-cloud-download me-1"></i> Extract Selected Data
+                  </button>
+                </div>
+              </div>
+              <div class="row mb-3">
+                <div class="col-md-4">
+                  <div class="card">
+                    <div class="card-header bg-light">
+                      <h6 class="mb-0">Filter Fields</h6>
+                    </div>
+                    <div class="card-body">
+                      <!-- Search box -->
+                      <div class="mb-3">
+                        <label for="field-search" class="form-label">Search</label>
+                        <div class="input-group">
+                          <input type="text" class="form-control" id="field-search" placeholder="Search fields...">
+                          <button class="btn btn-outline-secondary" type="button" id="clear-search">
+                            <i class="bi bi-x"></i>
+                          </button>
+                        </div>
+                      </div>
+                      
+                      <!-- Field type filter -->
+                      <div class="mb-3">
+                        <label class="form-label">Field Types</label>
+                        <div class="form-check">
+                          <input class="form-check-input filter-type" type="checkbox" id="filter-scalar" checked>
+                          <label class="form-check-label" for="filter-scalar">
+                            Scalar Fields
+                          </label>
+                        </div>
+                        <div class="form-check">
+                          <input class="form-check-input filter-type" type="checkbox" id="filter-object" checked>
+                          <label class="form-check-label" for="filter-object">
+                            Object Fields
+                          </label>
+                        </div>
+                        <div class="form-check">
+                          <input class="form-check-input filter-type" type="checkbox" id="filter-connection" checked>
+                          <label class="form-check-label" for="filter-connection">
+                            Connections
+                          </label>
+                        </div>
+                      </div>
+                      
+                      <!-- Category filter -->
+                      <div>
+                        <label class="form-label">Categories</label>
+                        <div id="category-filter-list">
+                          <!-- Categories will be added dynamically -->
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div class="mt-3">
+                    <div class="form-check form-switch">
+                      <input class="form-check-input" type="checkbox" id="group-by-category">
+                      <label class="form-check-label" for="group-by-category">Group fields by category</label>
+                    </div>
+                  </div>
+                </div>
+                
+                <div class="col-md-8">
+                  <div class="table-responsive">
+                <table class="table table-sm" id="fields-table">
+                  <thead>
+                    <tr>
+                      <th style="width: 50px">Select</th>
+                      <th>Field Name</th>
+                      <th>Category</th>
+                      <th>Type</th>
+                      <th>Description</th>
+                    </tr>
+                  </thead>
+                  <tbody id="fields-list-body">
+                    <!-- Fields will be listed here -->
+                  </tbody>
+                </table>
+                  </div>
+                  
+                  <!-- Field Categories Panel (Collapsible) -->
+                  <div id="field-categories-panel" style="display: none;">
+                    <div class="card mb-3">
+                      <div class="card-header bg-light">
+                        <h6 class="mb-0">Field Categories</h6>
+                      </div>
+                      <div class="card-body p-0">
+                        <div class="accordion" id="categories-accordion">
+                          <!-- Category groups will be added here dynamically -->
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Extraction Progress Section - Initially Hidden -->
+    <div class="row mb-4" id="extraction-section" style="display: none;">
+      <div class="col-12">
+        <div class="card">
+          <div class="card-header bg-warning text-dark">
+            <h5 class="mb-0">Extraction Progress</h5>
+          </div>
+          <div class="card-body">
+            <div class="progress mb-3" style="height: 25px;">
+              <div id="extraction-progress-bar" class="progress-bar progress-bar-striped progress-bar-animated" 
+                   role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100" style="width: 0%">
+                0%
+              </div>
+            </div>
+            <div class="d-flex justify-content-between">
+              <div>
+                <span class="fw-bold">Status:</span> <span id="extraction-status">Waiting to start...</span>
+              </div>
+              <div>
+                <span class="fw-bold">Records processed:</span> <span id="records-count">0</span>
+              </div>
+            </div>
+            <div class="mt-3">
+              <pre id="extraction-logs" class="bg-light p-3" style="max-height: 200px; overflow-y: auto;"></pre>
+            </div>
+            <div class="text-end mt-3">
+              <button id="download-data-btn" class="btn btn-success" disabled>
+                <i class="bi bi-file-earmark-arrow-down me-1"></i> Download Extracted Data
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Hidden Field for Current Query -->
+  <input type="hidden" id="current-query" value="">
+  <input type="hidden" id="current-resource" value="">
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

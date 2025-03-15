@@ -1,0 +1,232 @@
+/* Custom styles for Shopify Data Extractor */
+
+.card {
+  box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+  border: none;
+  margin-bottom: 1.5rem;
+}
+
+.card-header {
+  font-weight: 500;
+  border-bottom: none;
+}
+
+/* Table styles */
+.table > :not(caption) > * > * {
+  padding: 0.75rem 1rem;
+}
+
+.table-hover tbody tr:hover {
+  background-color: rgba(0, 123, 255, 0.05);
+}
+
+/* Button styles */
+.btn {
+  font-weight: 500;
+}
+
+.btn-primary {
+  background-color: #5c6ac4;
+  border-color: #5c6ac4;
+}
+
+.btn-primary:hover {
+  background-color: #4959bd;
+  border-color: #4959bd;
+}
+
+.btn-success {
+  background-color: #50b83c;
+  border-color: #50b83c;
+}
+
+.btn-success:hover {
+  background-color: #47a336;
+  border-color: #47a336;
+}
+
+/* Form styles */
+.form-control:focus {
+  border-color: #5c6ac4;
+  box-shadow: 0 0 0 0.25rem rgba(92, 106, 196, 0.25);
+}
+
+/* Custom badge for connection status */
+.badge.bg-danger {
+  background-color: #de3618 !important;
+}
+
+.badge.bg-success {
+  background-color: #50b83c !important;
+}
+
+/* Logs container */
+#extraction-logs {
+  border-radius: 0.25rem;
+  font-family: SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+/* Field selection table */
+#fields-table {
+  font-size: 0.9rem;
+}
+
+/* Progress bar */
+.progress-bar {
+  font-weight: 500;
+  font-size: 0.9rem;
+}
+
+/* Resource hover effect */
+.resource-row {
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.resource-row:hover {
+  background-color: rgba(92, 106, 196, 0.1);
+}
+
+/* Shopify colors */
+.bg-shopify {
+  background-color: #5c6ac4 !important;
+  color: white !important;
+}
+
+.text-shopify {
+  color: #5c6ac4 !important;
+}
+
+/* Field type badges */
+.badge-field-type {
+  font-size: 0.75rem;
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.25rem;
+  font-weight: 500;
+}
+
+.badge-scalar {
+  background-color: #e6effc;
+  color: #2c6ecb;
+}
+
+.badge-object {
+  background-color: #e5f6ee;
+  color: #107c41;
+}
+
+.badge-connection {
+  background-color: #fff0e5;
+  color: #ff6a00;
+}
+
+.badge-enum {
+  background-color: #f9f0ff;
+  color: #8a3ffc;
+}
+
+/* Loading spinner overlay */
+.loading-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(255, 255, 255, 0.7);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+}
+
+/* Pagination styles */
+.pagination-info {
+  font-size: 0.9rem;
+  color: #6c757d;
+}
+
+/* Category styles */
+.category-badge {
+  font-size: 0.75rem;
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.25rem;
+  font-weight: 500;
+  background-color: #f8f9fa;
+  color: #495057;
+  display: inline-block;
+  margin-right: 0.5rem;
+}
+
+.category-group {
+  border-left: 3px solid #5c6ac4;
+  margin-bottom: 0.5rem;
+}
+
+.category-header {
+  background-color: rgba(92, 106, 196, 0.05);
+  padding: 0.5rem 1rem;
+  cursor: pointer;
+}
+
+.category-header:hover {
+  background-color: rgba(92, 106, 196, 0.1);
+}
+
+.category-body {
+  padding: 0.75rem 1rem;
+}
+
+.field-row-grouped {
+  margin-bottom: 0.25rem;
+  padding: 0.5rem;
+  border-radius: 0.25rem;
+  transition: background-color 0.2s ease;
+}
+
+.field-row-grouped:hover {
+  background-color: rgba(0, 0, 0, 0.03);
+}
+
+.field-parent {
+  color: #6c757d;
+  font-size: 0.8rem;
+  font-style: italic;
+}
+
+/* Field group indicator */
+.field-group {
+  position: relative;
+}
+
+.field-group::before {
+  content: "";
+  position: absolute;
+  left: -1rem;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background-color: #e9ecef;
+}
+
+.field-group:hover::before {
+  background-color: #5c6ac4;
+}
+
+/* Collapsible categories */
+.accordion-button:not(.collapsed) {
+  background-color: rgba(92, 106, 196, 0.1);
+  color: #5c6ac4;
+  box-shadow: none;
+}
+
+.accordion-item {
+  border-color: #e9ecef;
+}
+
+.category-counter {
+  font-size: 0.75rem;
+  color: #6c757d;
+  margin-left: 0.5rem;
+}
