@@ -48,6 +48,8 @@ const productQuery = `
                 price
                 compareAtPrice
                 inventoryQuantity
+                availableForSale
+                taxable
                 selectedOptions {
                   name
                   value

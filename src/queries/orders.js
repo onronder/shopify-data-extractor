@@ -13,28 +13,53 @@ const orderQuery = `
           id
           name
           email
+          phone
+          closed
+          cancelReason
+          cancelledAt
+          processedAt
           createdAt
           updatedAt
-          cancelledAt
-          cancelReason
-          closed
-          confirmed
-          test
-          totalPrice
-          totalDiscounts
-          totalTax
-          subtotalPrice
-          totalShippingPrice
-          currencyCode
-          fulfillmentStatus
-          financialStatus
-          processedAt
+          displayFulfillmentStatus
+          displayFinancialStatus
+          note
           tags
+          subtotalLineItemsQuantity
+          totalPriceSet {
+            shopMoney {
+              amount
+              currencyCode
+            }
+          }
+          subtotalPriceSet {
+            shopMoney {
+              amount
+              currencyCode
+            }
+          }
+          totalShippingPriceSet {
+            shopMoney {
+              amount
+              currencyCode
+            }
+          }
+          totalTaxSet {
+            shopMoney {
+              amount
+              currencyCode
+            }
+          }
+          totalDiscountsSet {
+            shopMoney {
+              amount
+              currencyCode
+            }
+          }
           customer {
             id
-            email
             firstName
             lastName
+            email
             phone
           }
           shippingAddress {
@@ -47,6 +72,8 @@ const orderQuery = `
             country
             zip
             phone
+            company
+            formatted
           }
           billingAddress {
             firstName
@@ -58,44 +85,51 @@ const orderQuery = `
             country
             zip
             phone
+            company
+            formatted
           }
-          lineItems(first: 20) {
+          lineItems(first: 50) {
             edges {
               node {
                 id
                 title
                 quantity
-                originalTotalPrice
-                discountedTotalPrice
-                variant {
-                  id
-                  sku
-                  title
-                  price
-                }
-                product {
-                  id
-                  title
-                  handle
-                }
-              }
-            }
-          }
-          transactions(first: 5) {
-            edges {
-              node {
-                id
-                status
-                test
-                kind
-                gateway
-                createdAt
-                amountSet {
+                discountedTotalSet {
                   shopMoney {
                     amount
                     currencyCode
                   }
                 }
+                originalTotalSet {
+                  shopMoney {
+                    amount
+                    currencyCode
+                  }
+                }
+                variant {
+                  id
+                  title
+                  sku
+                  price
+                  product {
+                    id
+                    title
+                    handle
+                  }
+                }
+              }
+            }
+          }
+          transactions {
+            id
+            status
+            kind
+            gateway
+            createdAt
+            amountSet {
+              shopMoney {
+                amount
+                currencyCode
               }
             }
           }

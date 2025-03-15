@@ -1277,8 +1277,19 @@ document.addEventListener('DOMContentLoaded', () => {
   
   // Helper function to update progress bar
   function updateProgressBar(percent) {
+    // Ensure percent is a valid number
+    if (isNaN(percent) || percent === null || percent === undefined) {
+      percent = 0;
+    }
+    
+    // Ensure percent is between 0 and 100
+    percent = Math.max(0, Math.min(100, percent));
+    
+    // Update DOM properties
     extractionProgressBar.style.width = `${percent}%`;
     extractionProgressBar.setAttribute('aria-valuenow', percent);
+    // Also add percent text inside the progress bar
+    extractionProgressBar.textContent = `${Math.round(percent)}%`;
     
     // Change color based on progress
     if (percent < 25) {
@@ -1290,6 +1301,8 @@ document.addEventListener('DOMContentLoaded', () => {
     } else {
       extractionProgressBar.className = 'progress-bar bg-success';
     }
+    
+    console.log(`Progress updated: ${percent}%`);
   }
   
   // Helper function to append to logs
@@ -1552,4 +1565,293 @@ document.addEventListener('DOMContentLoaded', () => {
         alert('Failed to copy to clipboard');
       });
   });
+  
+  // Create the dependent query modal
+  function createDependentQueryModal() {
+    const modalHTML = `
+      <div class="modal fade" id="dependent-query-modal" tabindex="-1" aria-labelledby="dependent-query-modal-label" aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+          <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+              <h5 class="modal-title" id="dependent-query-modal-label">Dependent Query Extraction</h5>
+              <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+              <div class="alert alert-info">
+                <p><strong>What are dependent queries?</strong></p>
+                <p>Some Shopify data requires multiple queries to fully extract. For example, to get complete variant details, 
+                we first need to fetch products to get variant IDs, then query each variant separately.</p>
+                <p class="mb-0"><a href="/dependent-queries-info.html" target="_blank" class="alert-link">Learn more about dependent queries <i class="bi bi-box-arrow-up-right ms-1"></i></a></p>
+              </div>
+              
+              <h6 class="mb-3">Select a dependent query type:</h6>
+              <div class="list-group dependent-query-list">
+                <div class="text-center my-5">
+                  <div class="spinner-border text-primary" role="status">
+                    <span class="visually-hidden">Loading templates...</span>
+                  </div>
+                  <p class="mt-2">Loading query templates...</p>
+                </div>
+              </div>
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+    
+    // Add modal to document
+    document.body.insertAdjacentHTML('beforeend', modalHTML);
+    
+    // Load query templates when modal is shown
+    const modal = document.getElementById('dependent-query-modal');
+    modal.addEventListener('show.bs.modal', loadDependentQueryTemplates);
+  }
+  
+  // Fetch and display dependent query templates
+  async function loadDependentQueryTemplates() {
+    const queryList = document.querySelector('.dependent-query-list');
+    
+    try {
+      const response = await fetch('/api/dependent-query-templates');
+      
+      if (!response.ok) {
+        throw new Error(`Failed to load templates: ${response.status}`);
+      }
+      
+      const templates = await response.json();
+      
+      if (templates.length === 0) {
+        queryList.innerHTML = `
+          <div class="alert alert-warning">
+            No query templates available.
+          </div>
+        `;
+        return;
+      }
+      
+      // Create template list
+      queryList.innerHTML = templates.map(template => `
+        <button class="list-group-item list-group-item-action dependent-query-option" data-type="${template.name}">
+          <div class="d-flex w-100 justify-content-between">
+            <h6 class="mb-1">${template.label}</h6>
+            <small class="text-muted">${template.name}</small>
+          </div>
+          <p class="mb-1">${template.description}</p>
+          <small class="text-muted">${template.help}</small>
+        </button>
+      `).join('');
+      
+      // Add event listeners
+      document.querySelectorAll('.dependent-query-option').forEach(button => {
+        button.addEventListener('click', (e) => {
+          const queryType = e.currentTarget.dataset.type;
+          // Close the modal
+          const modal = bootstrap.Modal.getInstance(document.getElementById('dependent-query-modal'));
+          modal.hide();
+          // Start the dependent extraction
+          startDependentExtraction(queryType);
+        });
+      });
+    } catch (error) {
+      console.error('Error loading query templates:', error);
+      queryList.innerHTML = `
+        <div class="alert alert-danger">
+          Failed to load query templates: ${error.message}
+        </div>
+      `;
+    }
+  }
+
+  // Add dependent query button to UI
+  function addDependentQueryButton() {
+    // Create button element
+    const buttonHTML = `
+      <button id="dependent-query-btn" class="btn btn-outline-info ms-2">
+        <i class="bi bi-diagram-3 me-1"></i> Dependent Queries
+      </button>
+    `;
+    
+    // Find container to add button
+    const customExtractionBtn = document.getElementById('custom-extraction-btn');
+    if (customExtractionBtn) {
+      customExtractionBtn.insertAdjacentHTML('afterend', buttonHTML);
+      
+      // Add click handler
+      document.getElementById('dependent-query-btn').addEventListener('click', () => {
+        // Show the dependent query modal
+        const modal = new bootstrap.Modal(document.getElementById('dependent-query-modal'));
+        modal.show();
+      });
+    }
+  }
+
+  // Start dependent extraction process
+  async function startDependentExtraction(queryType) {
+    if (!appState.connected) {
+      alert('Please connect to your Shopify store first');
+      return;
+    }
+    
+    // Show extraction section
+    extractionSection.style.display = 'block';
+    extractionSection.scrollIntoView({ behavior: 'smooth' });
+    
+    // Reset extraction UI
+    updateProgressBar(0);
+    extractionStatus.textContent = 'Initializing dependent extraction...';
+    recordsCount.textContent = '0';
+    extractionLogs.innerHTML = '';
+    
+    // Log start
+    appendToLogs(`Starting dependent extraction for ${queryType}...`);
+    
+    // Disable download buttons until complete
+    downloadDataBtn.disabled = true;
+    viewJsonBtn.disabled = true;
+    
+    try {
+      // Initialize the extraction on the server
+      const response = await fetch('/api/dependent-extract', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ queryType })
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Failed to start extraction: ${response.status}`);
+      }
+      
+      // Set app state for tracking
+      appState.extractionInProgress = true;
+      appState.selectedResource = queryType;
+      
+      // Start monitoring progress
+      startExtractionUpdates();
+      
+    } catch (error) {
+      console.error('Failed to start dependent extraction:', error);
+      appendToLogs(`Error: ${error.message}`);
+      extractionStatus.textContent = 'Failed to start extraction';
+    }
+  }
+
+  // Add to DOM Content Loaded event
+  createDependentQueryModal();
+  addDependentQueryButton();
+  
+  // Update the extraction status display for dependent queries
+  function updateDependentExtractionStatus(status, errorMessage) {
+    // Update status based on extraction state
+    let statusText;
+    let statusClass;
+    
+    switch (status) {
+      case 'fetching-primary':
+        statusText = 'Fetching primary data...';
+        statusClass = 'text-primary';
+        break;
+      case 'fetching-secondary':
+        statusText = 'Fetching dependent data...';
+        statusClass = 'text-info';
+        break;
+      case 'completed':
+        statusText = 'Extraction completed!';
+        statusClass = 'text-success';
+        break;
+      case 'failed':
+        // Special handling for schema compatibility errors
+        if (errorMessage && (errorMessage.includes("Schema compatibility") || errorMessage.includes("doesn't exist on type"))) {
+          statusText = 'Schema Compatibility Error';
+          statusClass = 'text-warning';
+          // Add a tooltip explanation
+          extractionStatus.title = 'This template contains fields not supported in your shop\'s API version';
+        } else {
+          statusText = 'Extraction failed';
+          statusClass = 'text-danger';
+        }
+        break;
+      default:
+        statusText = 'Processing...';
+        statusClass = 'text-warning';
+    }
+    
+    // Update UI
+    extractionStatus.textContent = statusText;
+    extractionStatus.className = statusClass;
+  }
+  
+  // Add an update to startExtractionUpdates function to handle dependent queries
+  const originalStartExtractionUpdates = startExtractionUpdates;
+  startExtractionUpdates = function() {
+    const updateInterval = setInterval(async () => {
+      if (!appState.extractionInProgress) {
+        clearInterval(updateInterval);
+        return;
+      }
+      
+      try {
+        const response = await fetch('/api/extraction-status');
+        if (!response.ok) {
+          throw new Error(`Failed to get extraction status: ${response.status}`);
+        }
+        
+        const statusData = await response.json();
+        
+        // Update progress bar
+        updateProgressBar(statusData.progress);
+        
+        // Handle dependent query states
+        if (statusData.status === 'fetching-primary' || statusData.status === 'fetching-secondary') {
+          updateDependentExtractionStatus(statusData.status);
+        } else if (statusData.status === 'failed') {
+          // Pass the error message for better handling
+          updateDependentExtractionStatus(statusData.status, statusData.log);
+        } else {
+          // Update status text
+          extractionStatus.textContent = getStatusText(statusData.status);
+        }
+        
+        // Update records count
+        recordsCount.textContent = statusData.recordsProcessed.toString();
+        
+        // Add log if available
+        if (statusData.log) {
+          appendToLogs(statusData.log);
+        }
+        
+        // Check if extraction is complete
+        if (statusData.status === 'completed') {
+          appState.extractionInProgress = false;
+          appState.extractionData = statusData.data;
+          
+          // Enable download and view JSON buttons
+          downloadDataBtn.disabled = false;
+          viewJsonBtn.disabled = false;
+          
+          // Final log
+          appendToLogs(`Extraction completed: ${statusData.recordsProcessed} records extracted`);
+          
+          // Clear the interval
+          clearInterval(updateInterval);
+        } else if (statusData.status === 'failed') {
+          appState.extractionInProgress = false;
+          
+          // Final log
+          appendToLogs(`Extraction failed: ${statusData.log || 'Unknown error'}`);
+          
+          // Clear the interval
+          clearInterval(updateInterval);
+        }
+        
+      } catch (error) {
+        console.error('Error getting extraction status:', error);
+        appendToLogs(`Error getting status: ${error.message}`);
+      }
+    }, 1000); // Check every second
+  };
 });

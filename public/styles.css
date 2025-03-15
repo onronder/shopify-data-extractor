@@ -74,9 +74,27 @@
 }
 
 /* Progress bar */
+.progress {
+  height: 1.5rem;
+  margin-bottom: 1rem;
+  overflow: hidden;
+  background-color: #f5f5f5;
+  border-radius: 0.25rem;
+  box-shadow: inset 0 1px 2px rgba(0,0,0,.1);
+}
+
 .progress-bar {
-  font-weight: 500;
+  font-weight: 700;
   font-size: 0.9rem;
+  position: relative;
+  color: white;
+  text-shadow: 0 0 3px rgba(0, 0, 0, 0.5);
+  line-height: 1.5rem;
+  transition: width 0.6s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
 }
 
 /* Resource hover effect */
@@ -279,4 +297,32 @@
 #json-record-count {
   font-size: 0.9rem;
   padding: 0.4rem 0.6rem;
+}
+
+/* Dependent Query Styles */
+.dependent-query-option {
+  transition: all 0.2s ease;
+}
+
+.dependent-query-option:hover {
+  background-color: rgba(92, 106, 196, 0.08);
+}
+
+.dependent-query-list {
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+/* Status indicators for dependent queries */
+.status-fetching-primary,
+.status-fetching-secondary {
+  color: #0d6efd;
+}
+
+.status-completed {
+  color: #198754;
+}
+
+.status-failed {
+  color: #dc3545;
 }

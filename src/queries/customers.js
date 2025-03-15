@@ -11,42 +11,53 @@ const customerQuery = `
       edges {
         node {
           id
-          email
           firstName
           lastName
+          email
           phone
+          displayName
           createdAt
           updatedAt
           defaultAddress {
+            id
             address1
             address2
             city
-            company
             country
-            countryCodeV2
             firstName
             lastName
+            company
             phone
             province
-            provinceCode
             zip
+            formatted
           }
-          addresses(first: 5) {
+          addresses {
+            id
+            address1
+            address2
+            city
+            country
+            firstName
+            lastName
+            company
+            phone
+            province
+            zip
+            formatted
+          }
+          note
+          tags
+          state
+          taxExempt
+          metafields(first: 10) {
             edges {
               node {
-                address1
-                address2
-                city
-                company
-                country
-                countryCodeV2
-                firstName
-                lastName
-                phone
-                province
-                provinceCode
-                zip
-                formatted
+                id
+                namespace
+                key
+                value
+                type
               }
             }
           }
@@ -55,36 +66,18 @@ const customerQuery = `
               node {
                 id
                 name
-                createdAt
+                processedAt
+                displayFulfillmentStatus
+                displayFinancialStatus
                 totalPriceSet {
                   shopMoney {
                     amount
                     currencyCode
                   }
                 }
-                fulfillmentStatus
-                financialStatus
-                processedAt
               }
             }
           }
-          metafields(first: 10) {
-            edges {
-              node {
-                namespace
-                key
-                value
-                type
-              }
-            }
-          }
-          tags
-          note
-          acceptsMarketing
-          acceptsMarketingUpdatedAt
-          state
-          taxExempt
-          verifiedEmail
         }
       }
     }

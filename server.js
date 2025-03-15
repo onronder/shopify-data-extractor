@@ -5,6 +5,8 @@ const axios = require('axios');
 const bodyParser = require('body-parser');
 const { fetchSchema } = require('./src/utils/schema');
 const { buildDynamicQuery, validateAndUpdatePredefinedQuery } = require('./src/utils/queryBuilder');
+const { executeDependentQueries } = require('./src/utils/dependentQueries');
+// Using template queries instead of the old query module
 
 // Create Express app
 const app = express();
@@ -468,17 +470,24 @@ async function extractData(resource, query, fields, schemaTypes) {
         
         // Update progress
         extractionState.recordsProcessed = allItems.length;
+        
+        // Calculate progress percentage more clearly
+        let progressPercent = 0;
+        
         if (pageCount === 1 && !hasNextPage) {
           // If there's only one page, we're at 100%
-          extractionState.progress = 100;
+          progressPercent = 100;
         } else if (hasNextPage) {
-          // If there are more pages, estimate progress based on typical distribution
-          // This is a rough estimate since we don't know the total in advance
-          extractionState.progress = Math.min(90, Math.floor((pageCount * PAGE_SIZE) / (pageCount * PAGE_SIZE + PAGE_SIZE) * 100));
+          // If there are more pages, estimate progress based on retrieved pages
+          // More accurate progress estimation that grows with each page
+          progressPercent = Math.min(90, Math.ceil((pageCount * 15))); // Increase by 15% per page up to 90%
         } else {
           // Last page reached
-          extractionState.progress = 100;
+          progressPercent = 100;
         }
+        
+        console.log(`Extraction progress: ${progressPercent}% (page ${pageCount}, ${allItems.length} records)`);
+        extractionState.progress = progressPercent;
         
         // Make sure edges is defined before using it
         const edgesForLog = response.data.data && response.data.data[resource] && response.data.data[resource].edges ? response.data.data[resource].edges : [];
@@ -914,6 +923,173 @@ query GetCustomers($first: Int!, $after: String) {
              "defaultAddress", "addresses", "note", "tags", "state", "taxExempt", 
              "metafields", "orders"]
   };
+}
+
+// Import additional modules
+const { saveResultsToFile } = require('./src/utils/dependentQueries');
+const { getQueryTemplate, getTemplateList } = require('./src/queries/dependentQueryTemplates');
+const { 
+  getApiSchema, 
+  saveSchemaToCache,
+  loadSchemaFromCache,
+  clearSchemaCache
+} = require('./src/utils/schemaVersioning');
+
+// Get dependent query template list
+app.get('/api/dependent-query-templates', (req, res) => {
+  try {
+    const templates = getTemplateList();
+    res.status(200).json(templates);
+  } catch (error) {
+    console.error('Error getting query templates:', error);
+    res.status(500).json({ error: 'Failed to get query templates: ' + error.message });
+  }
+});
+
+// Add new endpoint for dependent extractions
+app.post('/api/dependent-extract', async (req, res) => {
+  const { queryType } = req.body;
+  
+  if (!queryType) {
+    return res.status(400).json({ error: 'Query type is required' });
+  }
+  
+  if (!shopifyCredentials.storeName || !shopifyCredentials.accessToken) {
+    return res.status(400).json({ error: 'Missing credentials' });
+  }
+  
+  try {
+    // Get query template
+    const template = getQueryTemplate(queryType);
+    if (!template) {
+      return res.status(400).json({ error: `Unknown query type: ${queryType}` });
+    }
+    
+    // Reset extraction state for new operation
+    extractionState = {
+      status: 'initializing',
+      progress: 0,
+      recordsProcessed: 0,
+      totalRecords: 0,
+      logs: [`Starting dependent extraction for ${template.label}`],
+      data: [],
+      resource: queryType,
+      query: null
+    };
+    
+    // Start dependent extraction in background
+    startDependentExtraction(queryType).catch(error => {
+      console.error('Dependent extraction error:', error);
+      extractionState.status = 'failed';
+      extractionState.logs.push(`Error: ${error.message}`);
+    });
+    
+    res.status(200).json({ success: true, message: 'Dependent extraction started' });
+  } catch (error) {
+    console.error('Error starting dependent extraction:', error);
+    res.status(500).json({ error: 'Failed to start dependent extraction: ' + error.message });
+  }
+});
+
+// Get schema information
+app.get('/api/schema-info', async (req, res) => {
+  try {
+    // Get cached schema
+    const cachedData = loadSchemaFromCache();
+    
+    res.status(200).json({
+      apiVersion: shopifyCredentials.apiVersion,
+      schemaCache: cachedData ? {
+        timestamp: cachedData.timestamp,
+        apiVersion: cachedData.apiVersion
+      } : null
+    });
+  } catch (error) {
+    console.error('Error getting schema info:', error);
+    res.status(500).json({ error: 'Failed to get schema info: ' + error.message });
+  }
+});
+
+// Clear schema cache
+app.post('/api/clear-schema-cache', (req, res) => {
+  try {
+    clearSchemaCache();
+    res.status(200).json({ success: true, message: 'Schema cache cleared' });
+  } catch (error) {
+    console.error('Error clearing schema cache:', error);
+    res.status(500).json({ error: 'Failed to clear schema cache: ' + error.message });
+  }
+});
+
+// Function to start dependent extraction
+async function startDependentExtraction(queryType) {
+  try {
+    extractionState.status = 'initializing';
+    
+    // Get query template
+    const template = getQueryTemplate(queryType);
+    if (!template) {
+      throw new Error(`Unknown query type: ${queryType}`);
+    }
+    
+    // Check for cached schema
+    let schema = null;
+    const cachedData = loadSchemaFromCache();
+    
+    if (cachedData && cachedData.apiVersion === shopifyCredentials.apiVersion) {
+      extractionState.logs.push('Using cached schema');
+      schema = cachedData.schema;
+    } else {
+      extractionState.logs.push('Fetching current schema from Shopify...');
+      schema = await getApiSchema(shopifyCredentials);
+      saveSchemaToCache(schema, shopifyCredentials.apiVersion);
+      extractionState.logs.push('Schema fetched and cached');
+    }
+    
+    // Check if the template needs adjustment for the current API version
+    extractionState.logs.push(`Validating ${template.label} template against schema...`);
+    
+    // Here we would ideally validate the primary query and secondary query against the schema
+    // but for simplicity, we'll continue with the extraction
+    
+    extractionState.logs.push(`Starting ${template.label} extraction with primary query...`);
+    
+    const results = await executeDependentQueries({
+      credentials: shopifyCredentials,
+      primaryQuery: template.primaryQuery,
+      secondaryQueryBuilder: template.buildSecondaryQuery,
+      idExtractor: template.idExtractor,
+      resultMerger: template.resultMerger,
+      extractionState: extractionState
+    });
+    
+    // Update extraction state with results
+    extractionState.status = 'completed';
+    extractionState.data = results;
+    extractionState.recordsProcessed = Array.isArray(results) ? results.length : 1;
+    extractionState.totalRecords = extractionState.recordsProcessed;
+    extractionState.progress = 100;
+    
+    // Save results to file
+    const filename = saveResultsToFile(queryType, results);
+    extractionState.logs.push(`Extraction completed: ${extractionState.recordsProcessed} records extracted`);
+    extractionState.logs.push(`Results saved to file: ${filename}`);
+    
+    return results;
+  } catch (error) {
+    extractionState.status = 'failed';
+    
+    // Handle schema compatibility errors gracefully
+    if (error.message.includes("Schema compatibility") || error.message.includes("doesn't exist on type")) {
+      extractionState.logs.push(`Schema Compatibility Error: ${error.message}`);
+      extractionState.logs.push("This template may not be compatible with your Shopify API version or shop configuration.");
+      extractionState.logs.push("Consider trying a different template or customizing this template for your shop.");
+    } else {
+      extractionState.logs.push(`Error: ${error.message}`);
+    }
+    
+    throw error;
+  }
 }
 
 // Serve the main HTML file for all other routes

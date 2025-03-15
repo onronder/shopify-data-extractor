@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Shopify Dependent Query Strategies</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="container mt-4 mb-4">
+    <div class="row">
+      <div class="col-12">
+        <div class="card">
+          <div class="card-header bg-primary text-white">
+            <h5 class="mb-0">Shopify Admin GraphQL API: Dependent Query Strategies</h5>
+          </div>
+          <div class="card-body">
+            <div class="alert alert-info">
+              <p class="lead mb-0">
+                When working with the Shopify Admin GraphQL API, some data types cannot be fetched directly with a single query.
+                These scenarios require dependent queries - fetching primary data first, then using the IDs to fetch related data.
+              </p>
+            </div>
+            
+            <h2 class="mt-4">Common Dependent Query Scenarios</h2>
+            
+            <div class="mt-4">
+              <h3>1. ProductVariant Details</h3>
+              <div class="code-block bg-light p-3 mb-3">
+                <pre class="mb-0"><code># First query: Fetch products and variant IDs
+query GetProductsWithVariantIds {
+  products(first: 10) {
+    edges {
+      node {
+        id
+        title
+        variants(first: 20) {
+          edges {
+            node {
+              id
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+# Second query: Get details for a specific variant
+query GetProductVariant($id: ID!) {
+  productVariant(id: $id) {
+    id
+    title
+    price
+    inventoryQuantity
+    # other fields...
+  }
+}</code></pre>
+              </div>
+              <p>
+                You cannot directly query product variants without their IDs. You first need to fetch products and their variant IDs, 
+                then query each variant individually for detailed information.
+              </p>
+            </div>
+            
+            <div class="mt-5">
+              <h3>2. Resource Metafields</h3>
+              <div class="code-block bg-light p-3 mb-3">
+                <pre class="mb-0"><code># First query: Fetch resources and their IDs
+query GetResourcesWithIds {
+  products(first: 10) {
+    edges {
+      node {
+        id
+        title
+      }
+    }
+  }
+}
+
+# Second query: Get metafields for a specific resource
+query GetMetafields($id: ID!) {
+  product(id: $id) {
+    id
+    metafields(first: 50) {
+      edges {
+        node {
+          id
+          namespace
+          key
+          value
+          type
+        }
+      }
+    }
+  }
+}</code></pre>
+              </div>
+              <p>
+                Metafields often need to be queried separately for each resource, especially when you want to get all metafields
+                for many resources. This helps avoid query complexity limits.
+              </p>
+            </div>
+            
+            <div class="mt-5">
+              <h3>3. Order Line Items</h3>
+              <div class="code-block bg-light p-3 mb-3">
+                <pre class="mb-0"><code># First query: Fetch orders with basic information
+query GetOrders {
+  orders(first: 10) {
+    edges {
+      node {
+        id
+        name
+        email
+      }
+    }
+  }
+}
+
+# Second query: Get detailed information for a specific order
+query GetOrderDetails($id: ID!) {
+  order(id: $id) {
+    id
+    lineItems(first: 50) {
+      edges {
+        node {
+          id
+          title
+          quantity
+          variant {
+            id
+            title
+            product {
+              id
+              title
+            }
+          }
+        }
+      }
+    }
+  }
+}</code></pre>
+              </div>
+              <p>
+                For orders with many line items, it's often better to query basic order information first, then fetch
+                detailed line items separately for each order to avoid pagination and complexity issues.
+              </p>
+            </div>
+            
+            <h2 class="mt-5">General Best Practices</h2>
+            
+            <h3>Pagination Management</h3>
+            <p>Shopify API generally limits queries to a maximum of 250 items per page. For large datasets, use cursor-based pagination:</p>
+            <div class="code-block bg-light p-3 mb-3">
+              <pre class="mb-0"><code>query GetProductsWithPagination($cursor: String) {
+  products(first: 250, after: $cursor) {
+    pageInfo {
+      hasNextPage
+      endCursor
+    }
+    edges {
+      node {
+        id
+        title
+        # other fields...
+      }
+    }
+  }
+}</code></pre>
+            </div>
+            
+            <h3>ID Formats</h3>
+            <p>Shopify uses Global ID format: <code>gid://shopify/{type}/{numeric_id}</code>. Always use this format for dependent queries.</p>
+            
+            <h3>Rate Limiting</h3>
+            <p>To avoid hitting rate limits:</p>
+            <ul>
+              <li>Limit parallel requests (use batching)</li>
+              <li>Add delays between requests</li>
+              <li>Implement exponential backoff for retries</li>
+            </ul>
+            
+            <h3>Data Merging Strategy</h3>
+            <p>The general strategy for dependent queries:</p>
+            <ol>
+              <li>Fetch primary objects (Products, Orders, Customers) and their IDs</li>
+              <li>Collect IDs in an array</li>
+              <li>Use these IDs to fetch related objects (Variants, LineItems, Metafields) with separate queries</li>
+              <li>Merge the data on the client side</li>
+            </ol>
+            
+            <div class="alert alert-warning mt-4">
+              <h4 class="alert-heading">Important Considerations</h4>
+              <p>When using dependent queries, be aware of the following:</p>
+              <ul class="mb-0">
+                <li>Extraction time will be longer due to multiple API calls</li>
+                <li>You may need to adjust batch sizes to balance speed and API limits</li>
+                <li>Always check for rate limiting headers in API responses</li>
+                <li>Consider extracting only necessary data to minimize API usage</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
