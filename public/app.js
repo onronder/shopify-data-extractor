@@ -76,6 +76,13 @@ document.addEventListener('DOMContentLoaded', () => {
   const recordsCount = document.getElementById('records-count');
   const extractionLogs = document.getElementById('extraction-logs');
   const downloadDataBtn = document.getElementById('download-data-btn');
+  const viewJsonBtn = document.getElementById('view-json-btn');
+  
+  // JSON View Modal Elements
+  const jsonViewModal = document.getElementById('json-view-modal');
+  const jsonViewContent = document.getElementById('json-view-content');
+  const jsonRecordCount = document.getElementById('json-record-count');
+  const copyJsonBtn = document.getElementById('copy-json-btn');
   
   // Hidden Fields
   const currentQueryInput = document.getElementById('current-query');
@@ -89,6 +96,7 @@ document.addEventListener('DOMContentLoaded', () => {
   selectAllFields.addEventListener('change', toggleSelectAllFields);
   extractDataBtn.addEventListener('click', startExtraction);
   downloadDataBtn.addEventListener('click', downloadExtractedData);
+  viewJsonBtn.addEventListener('click', viewJsonData);
   
   // Custom extraction button
   customExtractionBtn.addEventListener('click', () => {
@@ -918,6 +926,10 @@ document.addEventListener('DOMContentLoaded', () => {
     // Scroll to extraction section
     extractionSection.scrollIntoView({ behavior: 'smooth' });
     
+    // Reset buttons
+    downloadDataBtn.disabled = true;
+    viewJsonBtn.disabled = true;
+    
     try {
       // Build the GraphQL query
       const query = await buildGraphQLQuery(appState.selectedResource, selectedFields, selectedConnections);
@@ -982,6 +994,10 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Log start of extraction
     appendToLogs(`Starting predefined extraction for ${dataType}...`);
+    
+    // Reset buttons
+    downloadDataBtn.disabled = true;
+    viewJsonBtn.disabled = true;
     
     try {
       // Şemayı kontrol edip güvenli ve güncel bir sorgu alalım
@@ -1058,8 +1074,9 @@ document.addEventListener('DOMContentLoaded', () => {
           appState.extractionInProgress = false;
           appState.extractionData = statusData.data;
           
-          // Enable download button
+          // Enable download and view JSON buttons
           downloadDataBtn.disabled = false;
+          viewJsonBtn.disabled = false;
           
           // Final log
           appendToLogs(`Extraction completed: ${statusData.recordsProcessed} records extracted`);
@@ -1407,4 +1424,46 @@ document.addEventListener('DOMContentLoaded', () => {
       return query;
     }
   }
+  
+  // View JSON data
+  function viewJsonData() {
+    if (!appState.extractionData) {
+      alert('No data available to view');
+      return;
+    }
+    
+    // Format JSON with syntax highlighting
+    const formattedJson = JSON.stringify(appState.extractionData, null, 2);
+    
+    // Populate JSON view modal
+    jsonViewContent.textContent = formattedJson;
+    jsonRecordCount.textContent = `${appState.extractionData.length} records`;
+    
+    // Show modal using Bootstrap
+    const modal = new bootstrap.Modal(jsonViewModal);
+    modal.show();
+  }
+  
+  // Copy JSON to clipboard
+  copyJsonBtn.addEventListener('click', () => {
+    navigator.clipboard.writeText(jsonViewContent.textContent)
+      .then(() => {
+        // Change button text temporarily
+        const originalText = copyJsonBtn.innerHTML;
+        copyJsonBtn.innerHTML = '<i class="bi bi-check-circle-fill me-1"></i> Copied!';
+        copyJsonBtn.classList.add('btn-success');
+        copyJsonBtn.classList.remove('btn-outline-secondary');
+        
+        // Reset after 2 seconds
+        setTimeout(() => {
+          copyJsonBtn.innerHTML = originalText;
+          copyJsonBtn.classList.remove('btn-success');
+          copyJsonBtn.classList.add('btn-outline-secondary');
+        }, 2000);
+      })
+      .catch(err => {
+        console.error('Failed to copy text: ', err);
+        alert('Failed to copy to clipboard');
+      });
+  });
 });
