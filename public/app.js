@@ -868,7 +868,455 @@ document.addEventListener('DOMContentLoaded', () => {
       
       const matchesCategory = selectedCategories.includes(category);
       
-      checkbox.checked = (matchesSearch && matchesType && matchesCategory);
+      checkbox.closest('.field-row-grouped').style.display = 
+        (matchesSearch && matchesType && matchesCategory) ? '' : 'none';
     });
+  }
+  
+  // Start the data extraction process
+  async function startExtraction() {
+    // Get selected fields (from either view - table or categorized)
+    const selectedCheckboxes = document.querySelectorAll('.field-checkbox:checked');
+    
+    if (selectedCheckboxes.length === 0) {
+      alert('Please select at least one field to extract');
+      return;
+    }
+    
+    // Get selected fields and categorize them
+    const selectedFields = [];
+    const selectedConnections = [];
+    const fieldsByCategory = {};
+    
+    selectedCheckboxes.forEach(checkbox => {
+      const fieldName = checkbox.dataset.fieldName;
+      const isScalar = checkbox.dataset.isScalar === 'true';
+      const category = checkbox.dataset.category || 'Other';
+      
+      // Group by category for logging
+      if (!fieldsByCategory[category]) {
+        fieldsByCategory[category] = [];
+      }
+      fieldsByCategory[category].push(fieldName);
+      
+      // Split by field type
+      if (isScalar) {
+        selectedFields.push(fieldName);
+      } else {
+        selectedConnections.push(fieldName);
+      }
+    });
+    
+    appState.selectedFields = selectedFields.concat(selectedConnections);
+    
+    // Log the fields by category for reference
+    console.log('Selected fields by category:', fieldsByCategory);
+    
+    // Show extraction section
+    extractionSection.style.display = 'block';
+    
+    // Scroll to extraction section
+    extractionSection.scrollIntoView({ behavior: 'smooth' });
+    
+    try {
+      // Build the GraphQL query
+      const query = await buildGraphQLQuery(appState.selectedResource, selectedFields, selectedConnections);
+      currentQueryInput.value = query;
+      
+      // Log summary of selected fields by category
+      const categoryLog = Object.entries(fieldsByCategory)
+        .map(([category, fields]) => `${category}: ${fields.length} fields`)
+        .join(', ');
+      
+      appendToLogs(`Selected ${appState.selectedFields.length} fields across categories: ${categoryLog}`);
+      
+      // Log the query
+      appendToLogs(`Extraction query built for ${appState.selectedResource}`);
+      
+      // Start extraction
+      appState.extractionInProgress = true;
+      extractionStatus.textContent = 'Initializing extraction...';
+      updateProgressBar(0);
+      
+      // Initialize extraction
+      const initResponse = await fetch('/api/extract', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          resource: appState.selectedResource,
+          query,
+          fields: appState.selectedFields
+        })
+      });
+      
+      if (!initResponse.ok) {
+        throw new Error(`Failed to initialize extraction: ${initResponse.status}`);
+      }
+      
+      // Start listening for extraction updates
+      startExtractionUpdates();
+      
+    } catch (error) {
+      console.error('Extraction initialization error:', error);
+      appendToLogs(`Error: ${error.message}`);
+      extractionStatus.textContent = 'Failed to start extraction';
+      appState.extractionInProgress = false;
+    }
+  }
+  
+  // Start a predefined extraction based on data type
+  async function startPredefinedExtraction(dataType) {
+    // Show extraction section
+    extractionSection.style.display = 'block';
+    
+    // Scroll to extraction section
+    extractionSection.scrollIntoView({ behavior: 'smooth' });
+    
+    // Set progress and status
+    updateProgressBar(0);
+    extractionStatus.textContent = `Initializing ${dataType} extraction...`;
+    recordsCount.textContent = '0';
+    extractionLogs.textContent = '';
+    
+    // Log start of extraction
+    appendToLogs(`Starting predefined extraction for ${dataType}...`);
+    
+    try {
+      // Şemayı kontrol edip güvenli ve güncel bir sorgu alalım
+      const predefinedQuery = await getPredefinedQuery(dataType);
+      const resource = dataType; // Resource matches the data type (products, orders, customers)
+      
+      // Initialize extraction
+      const initResponse = await fetch('/api/extract', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          resource: resource,
+          query: predefinedQuery.query,
+          fields: predefinedQuery.fields
+        })
+      });
+      
+      if (!initResponse.ok) {
+        throw new Error(`Failed to initialize extraction: ${initResponse.status}`);
+      }
+      
+      // Set app state to track
+      appState.extractionInProgress = true;
+      appState.selectedResource = resource;
+      
+      // Set the resource and query for reference
+      currentResourceInput.value = resource;
+      currentQueryInput.value = predefinedQuery.query;
+      
+      // Start listening for extraction updates
+      startExtractionUpdates();
+      
+    } catch (error) {
+      console.error('Extraction initialization error:', error);
+      appendToLogs(`Error: ${error.message}`);
+      extractionStatus.textContent = 'Failed to start extraction';
+    }
+  }
+  
+  // Monitor extraction progress
+  function startExtractionUpdates() {
+    const updateInterval = setInterval(async () => {
+      if (!appState.extractionInProgress) {
+        clearInterval(updateInterval);
+        return;
+      }
+      
+      try {
+        const response = await fetch('/api/extraction-status');
+        if (!response.ok) {
+          throw new Error(`Failed to get extraction status: ${response.status}`);
+        }
+        
+        const statusData = await response.json();
+        
+        // Update progress bar
+        updateProgressBar(statusData.progress);
+        
+        // Update status text
+        extractionStatus.textContent = getStatusText(statusData.status);
+        
+        // Update records count
+        recordsCount.textContent = statusData.recordsProcessed.toString();
+        
+        // Add log if available
+        if (statusData.log) {
+          appendToLogs(statusData.log);
+        }
+        
+        // Check if extraction is complete
+        if (statusData.status === 'completed') {
+          appState.extractionInProgress = false;
+          appState.extractionData = statusData.data;
+          
+          // Enable download button
+          downloadDataBtn.disabled = false;
+          
+          // Final log
+          appendToLogs(`Extraction completed: ${statusData.recordsProcessed} records extracted`);
+          
+          // Clear the interval
+          clearInterval(updateInterval);
+        } else if (statusData.status === 'failed') {
+          appState.extractionInProgress = false;
+          
+          // Final log
+          appendToLogs(`Extraction failed: ${statusData.log || 'Unknown error'}`);
+          
+          // Clear the interval
+          clearInterval(updateInterval);
+        }
+        
+      } catch (error) {
+        console.error('Error getting extraction status:', error);
+        appendToLogs(`Error getting status: ${error.message}`);
+      }
+    }, 1000); // Check every second
+  }
+  
+  // Download the extracted data as JSON
+  function downloadExtractedData() {
+    if (!appState.extractionData) {
+      alert('No data available to download');
+      return;
+    }
+    
+    // Create a JSON blob
+    const dataStr = JSON.stringify(appState.extractionData, null, 2);
+    const blob = new Blob([dataStr], { type: 'application/json' });
+    
+    // Create a download link
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${appState.selectedResource}_${new Date().toISOString().split('T')[0]}.json`;
+    
+    // Trigger download
+    document.body.appendChild(a);
+    a.click();
+    
+    // Clean up
+    setTimeout(() => {
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }, 100);
+  }
+  
+  // Helper function to get status text
+  function getStatusText(status) {
+    switch (status) {
+      case 'idle':
+        return 'Ready to extract';
+      case 'initializing':
+        return 'Initializing extraction...';
+      case 'running':
+        return 'Extraction in progress...';
+      case 'paginating':
+        return 'Fetching data pages...';
+      case 'processing':
+        return 'Processing extracted data...';
+      case 'completed':
+        return 'Extraction completed!';
+      case 'failed':
+        return 'Extraction failed';
+      default:
+        return status;
+    }
+  }
+  
+  // Helper function to update progress bar
+  function updateProgressBar(percent) {
+    extractionProgressBar.style.width = `${percent}%`;
+    extractionProgressBar.setAttribute('aria-valuenow', percent);
+    
+    // Change color based on progress
+    if (percent < 25) {
+      extractionProgressBar.className = 'progress-bar bg-danger';
+    } else if (percent < 50) {
+      extractionProgressBar.className = 'progress-bar bg-warning';
+    } else if (percent < 75) {
+      extractionProgressBar.className = 'progress-bar bg-info';
+    } else {
+      extractionProgressBar.className = 'progress-bar bg-success';
+    }
+  }
+  
+  // Helper function to append to logs
+  function appendToLogs(message) {
+    const timestamp = new Date().toLocaleTimeString();
+    const logEntry = document.createElement('div');
+    logEntry.className = 'log-entry';
+    logEntry.innerHTML = `<span class="log-time">[${timestamp}]</span> ${message}`;
+    
+    extractionLogs.appendChild(logEntry);
+    extractionLogs.scrollTop = extractionLogs.scrollHeight;
+  }
+  
+  // Helper function to capitalize first letter
+  function capitalizeFirstLetter(string) {
+    return string.charAt(0).toUpperCase() + string.slice(1);
+  }
+  
+  // Helper function to show API selection section
+  function showApiSelectionSection() {
+    fieldSelectionSection.style.display = 'none';
+    apiSelectionSection.style.display = 'block';
+  }
+  
+  // Helper function to show predefined queries section
+  function showPredefinedQueriesSection() {
+    apiSelectionSection.style.display = 'none';
+    predefinedQueriesSection.style.display = 'block';
+  }
+  
+  // Helper function to show field selection section
+  function showFieldSelectionSection() {
+    apiSelectionSection.style.display = 'none';
+    fieldSelectionSection.style.display = 'block';
+  }
+  
+  // Helper function to check if a type is a scalar
+  function isScalarType(type) {
+    // Check if it's a scalar type
+    const scalarTypes = ['String', 'Int', 'Float', 'Boolean', 'ID'];
+    
+    // Get the base type (unwrap non-null and list types)
+    const baseType = getBaseType(type);
+    
+    // Check if the base type is a scalar
+    return scalarTypes.includes(baseType.name);
+  }
+  
+  // Helper function to get the base type (unwrap non-null and list types)
+  function getBaseType(type) {
+    if (type.kind === 'NON_NULL' && type.ofType) {
+      return getBaseType(type.ofType);
+    }
+    
+    if (type.kind === 'LIST' && type.ofType) {
+      return getBaseType(type.ofType);
+    }
+    
+    return type;
+  }
+  
+  // Helper function to get type display text
+  function getTypeDisplay(type) {
+    if (type.kind === 'NON_NULL') {
+      return `${getTypeDisplay(type.ofType)}!`;
+    }
+    
+    if (type.kind === 'LIST') {
+      return `[${getTypeDisplay(type.ofType)}]`;
+    }
+    
+    return type.name;
+  }
+  
+  // Helper function to get type class for styling
+  function getTypeClass(type) {
+    const baseType = getBaseType(type);
+    
+    if (isScalarType(type)) {
+      return 'bg-success';
+    }
+    
+    if (baseType.name && baseType.name.includes('Connection')) {
+      return 'bg-primary';
+    }
+    
+    return 'bg-info';
+  }
+  
+  // Get a predefined query by type
+  async function getPredefinedQuery(type) {
+    try {
+      // Önce şemayı kontrol edelim
+      const validateQueryResponse = await fetch('/api/validate-query', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          resourceType: type,
+          predefinedType: type
+        })
+      });
+      
+      if (!validateQueryResponse.ok) {
+        throw new Error(`Failed to validate query: ${validateQueryResponse.status}`);
+      }
+      
+      const validatedQuery = await validateQueryResponse.json();
+      return validatedQuery;
+    } catch (error) {
+      console.error(`Error getting predefined query for ${type}:`, error);
+      alert(`Failed to prepare query: ${error.message}`);
+      throw error;
+    }
+  }
+  
+  // Helper function to build a GraphQL query
+  async function buildGraphQLQuery(resourceName, scalarFields, connectionFields) {
+    try {
+      // Dinamik sorgu oluştur
+      const response = await fetch('/api/build-query', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          resource: resourceName,
+          fields: [...scalarFields, ...connectionFields]
+        })
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Failed to build query: ${response.status}`);
+      }
+      
+      const result = await response.json();
+      return result.query;
+    } catch (error) {
+      console.error('Error building GraphQL query:', error);
+      
+      // Bir hata olursa basit bir sorgu döndürelim
+      const queryName = `get${capitalizeFirstLetter(resourceName)}`;
+      
+      let query = `query ${queryName}($first: Int!, $after: String) {\n`;
+      query += `  ${resourceName}(first: $first, after: $after) {\n`;
+      query += `    pageInfo {\n`;
+      query += `      hasNextPage\n`;
+      query += `      endCursor\n`;
+      query += `    }\n`;
+      query += `    edges {\n`;
+      query += `      node {\n`;
+      query += `        id\n`;
+      
+      // En azından ID'yi her zaman ekleyelim
+      const uniqueFields = new Set(['id', ...scalarFields, ...connectionFields]);
+      
+      uniqueFields.forEach(field => {
+        if (field !== 'id') { // ID zaten eklendi
+          query += `        ${field}\n`;
+        }
+      });
+      
+      query += `      }\n`;
+      query += `    }\n`;
+      query += `  }\n`;
+      query += `}`;
+      
+      return query;
+    }
   }
 });
