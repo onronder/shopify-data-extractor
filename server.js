@@ -3,6 +3,8 @@ const path = require('path');
 const fs = require('fs');
 const axios = require('axios');
 const bodyParser = require('body-parser');
+const { fetchSchema } = require('./src/utils/schema');
+const { buildDynamicQuery, validateAndUpdatePredefinedQuery } = require('./src/utils/queryBuilder');
 
 // Create Express app
 const app = express();
@@ -133,67 +135,91 @@ app.get('/api/schema', async (req, res) => {
   }
   
   try {
-    const endpoint = `https://${shopifyCredentials.storeName}.myshopify.com/admin/api/${shopifyCredentials.apiVersion}/graphql.json`;
-    const introspectionQuery = `
-      query IntrospectionQuery {
-        __schema {
-          queryType { name }
-          types {
-            kind
-            name
-            description
-            fields {
-              name
-              description
-              args {
-                name
-                description
-                type {
-                  kind
-                  name
-                  ofType {
-                    kind
-                    name
-                  }
-                }
-              }
-              type {
-                kind
-                name
-                ofType {
-                  kind
-                  name
-                  ofType {
-                    kind
-                    name
-                  }
-                }
-              }
-            }
-          }
-        }
+    const schemaTypes = await fetchSchema(shopifyCredentials);
+    res.status(200).json(schemaTypes);
+  } catch (error) {
+    console.error('Error fetching schema:', error);
+    res.status(500).json({ error: 'Failed to fetch schema: ' + error.message });
+  }
+});
+
+// Validate query
+app.post('/api/validate-query', async (req, res) => {
+  const { resourceType, predefinedType } = req.body;
+  
+  if (!resourceType) {
+    return res.status(400).json({ error: 'Resource type is required' });
+  }
+  
+  if (!shopifyCredentials.storeName || !shopifyCredentials.accessToken) {
+    return res.status(400).json({ error: 'Missing credentials' });
+  }
+  
+  try {
+    // Fetch schema
+    const schemaTypes = await fetchSchema(shopifyCredentials);
+    
+    let validatedQuery;
+    
+    if (predefinedType) {
+      // Get predefined query for the type
+      let predefinedData;
+      
+      switch (predefinedType) {
+        case 'products':
+          predefinedData = getPredefinedProductsQuery();
+          break;
+        case 'orders':
+          predefinedData = getPredefinedOrdersQuery();
+          break;
+        case 'customers':
+          predefinedData = getPredefinedCustomersQuery();
+          break;
+        default:
+          return res.status(400).json({ error: `No predefined query for type: ${predefinedType}` });
       }
-    `;
-    
-    const response = await axios({
-      url: endpoint,
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Shopify-Access-Token': shopifyCredentials.accessToken
-      },
-      data: { query: introspectionQuery }
-    });
-    
-    if (response.data && response.data.data && response.data.data.__schema) {
-      return res.status(200).json(response.data.data.__schema);
+      
+      // Validate and update if needed
+      validatedQuery = validateAndUpdatePredefinedQuery(schemaTypes, resourceType, predefinedData);
+    } else {
+      // Build dynamic query
+      const query = buildDynamicQuery(schemaTypes, resourceType);
+      validatedQuery = {
+        query,
+        fields: extractFieldsFromQuery(query)
+      };
     }
     
-    res.status(400).json({ error: 'Invalid schema response from Shopify' });
-    
+    res.status(200).json(validatedQuery);
   } catch (error) {
-    console.error('Schema fetch error:', error.message);
-    res.status(500).json({ error: 'Failed to fetch schema' });
+    console.error('Error validating query:', error);
+    res.status(500).json({ error: 'Failed to validate query: ' + error.message });
+  }
+});
+
+// Build dynamic query
+app.post('/api/build-query', async (req, res) => {
+  const { resource, fields } = req.body;
+  
+  if (!resource) {
+    return res.status(400).json({ error: 'Resource name is required' });
+  }
+  
+  if (!shopifyCredentials.storeName || !shopifyCredentials.accessToken) {
+    return res.status(400).json({ error: 'Missing credentials' });
+  }
+  
+  try {
+    // Fetch schema
+    const schemaTypes = await fetchSchema(shopifyCredentials);
+    
+    // Build dynamic query
+    const query = buildDynamicQuery(schemaTypes, resource, fields);
+    
+    res.status(200).json({ query });
+  } catch (error) {
+    console.error('Error building query:', error);
+    res.status(500).json({ error: 'Failed to build query: ' + error.message });
   }
 });
 
@@ -277,34 +303,51 @@ app.get('/api/resource-fields', async (req, res) => {
 app.post('/api/extract', async (req, res) => {
   const { resource, query, fields } = req.body;
   
-  if (!resource || !query || !fields) {
-    return res.status(400).json({ error: 'Missing required parameters' });
+  if (!resource) {
+    return res.status(400).json({ error: 'Resource name is required' });
   }
   
   if (!shopifyCredentials.storeName || !shopifyCredentials.accessToken) {
     return res.status(400).json({ error: 'Missing credentials' });
   }
   
-  // Reset extraction state
-  extractionState = {
-    status: 'initializing',
-    progress: 0,
-    recordsProcessed: 0,
-    totalRecords: 0,
-    logs: [`Starting extraction for ${resource}`],
-    data: [],
-    resource,
-    query
-  };
-  
-  // Start extraction in the background
-  extractData(resource, query, fields).catch(error => {
-    console.error('Extraction error:', error);
-    extractionState.status = 'failed';
-    extractionState.logs.push(`Error: ${error.message}`);
-  });
-  
-  res.status(200).json({ success: true, message: 'Extraction started' });
+  try {
+    // Fetch schema
+    const schemaTypes = await fetchSchema(shopifyCredentials);
+    
+    // Validate query or build a new one
+    let validatedQuery = query;
+    
+    if (!query) {
+      // If no query provided, build dynamically
+      validatedQuery = buildDynamicQuery(schemaTypes, resource, fields);
+      console.log('Generated dynamic query for extraction');
+    }
+    
+    // Reset extraction state
+    extractionState = {
+      status: 'initializing',
+      progress: 0,
+      recordsProcessed: 0,
+      totalRecords: 0,
+      logs: [`Starting extraction for ${resource}`],
+      data: [],
+      resource,
+      query: validatedQuery
+    };
+    
+    // Start extraction in the background
+    extractData(resource, validatedQuery, fields, schemaTypes).catch(error => {
+      console.error('Extraction error:', error);
+      extractionState.status = 'failed';
+      extractionState.logs.push(`Error: ${error.message}`);
+    });
+    
+    res.status(200).json({ success: true, message: 'Extraction started' });
+  } catch (error) {
+    console.error('Error preparing extraction:', error);
+    res.status(500).json({ error: 'Failed to prepare extraction: ' + error.message });
+  }
 });
 
 // Get extraction status
@@ -325,7 +368,7 @@ app.get('/api/extraction-status', (req, res) => {
 });
 
 // Data extraction function
-async function extractData(resource, query, fields) {
+async function extractData(resource, query, fields, schemaTypes) {
   try {
     const endpoint = `https://${shopifyCredentials.storeName}.myshopify.com/admin/api/${shopifyCredentials.apiVersion}/graphql.json`;
     console.log(`Extraction initiated for ${resource} using endpoint: ${endpoint}`);
@@ -369,24 +412,59 @@ async function extractData(resource, query, fields) {
         
         if (response.data.errors) {
           console.error(`GraphQL errors:`, JSON.stringify(response.data.errors));
-          const errorMessage = response.data.errors[0].message;
-          const errorDetails = response.data.errors[0].locations ? 
-            ` at line ${response.data.errors[0].locations[0]?.line}, column ${response.data.errors[0].locations[0]?.column}` : '';
-          throw new Error(`${errorMessage}${errorDetails}`);
+          
+          // Try regenerating query on error
+          extractionState.logs.push(`Encountered schema errors, regenerating query...`);
+          
+          // Generate a new query using the schema
+          const newQuery = buildDynamicQuery(schemaTypes, resource);
+          
+          extractionState.logs.push(`Retrying with dynamically generated query`);
+          extractionState.query = newQuery;
+          
+          // Retry with new query
+          const retryResponse = await axios({
+            url: endpoint,
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-Shopify-Access-Token': shopifyCredentials.accessToken
+            },
+            data: {
+              query: newQuery,
+              variables
+            }
+          });
+          
+          if (retryResponse.data.errors) {
+            throw new Error(`Query regeneration failed: ${retryResponse.data.errors[0].message}`);
+          }
+          
+          // Successfully got response with new query
+          const retryData = retryResponse.data.data[resource];
+          const retryEdges = retryData.edges || [];
+          
+          // Extract items from edges
+          const pageItems = retryEdges.map(edge => edge.node);
+          allItems = [...allItems, ...pageItems];
+          
+          // Update pagination state
+          hasNextPage = retryData.pageInfo.hasNextPage || false;
+          cursor = retryData.pageInfo.endCursor || null;
+        } else {
+          // Extract data and pagination info
+          const responseData = response.data.data[resource];
+          const edges = responseData.edges || [];
+          const pageInfo = responseData.pageInfo || {};
+          
+          // Extract items from edges
+          const pageItems = edges.map(edge => edge.node);
+          allItems = [...allItems, ...pageItems];
+          
+          // Update pagination state
+          hasNextPage = pageInfo.hasNextPage || false;
+          cursor = pageInfo.endCursor || null;
         }
-        
-        // Extract data and pagination info
-        const responseData = response.data.data[resource];
-        const edges = responseData.edges || [];
-        const pageInfo = responseData.pageInfo || {};
-        
-        // Extract items from edges
-        const pageItems = edges.map(edge => edge.node);
-        allItems = [...allItems, ...pageItems];
-        
-        // Update pagination state
-        hasNextPage = pageInfo.hasNextPage || false;
-        cursor = pageInfo.endCursor || null;
         
         // Update progress
         extractionState.recordsProcessed = allItems.length;
@@ -395,14 +473,13 @@ async function extractData(resource, query, fields) {
           extractionState.progress = 100;
         } else if (hasNextPage) {
           // If there are more pages, estimate progress based on typical distribution
-          // This is a rough estimate since we don't know the total in advance
           extractionState.progress = Math.min(90, Math.floor((pageCount * PAGE_SIZE) / (pageCount * PAGE_SIZE + PAGE_SIZE) * 100));
         } else {
           // Last page reached
           extractionState.progress = 100;
         }
         
-        extractionState.logs.push(`Retrieved ${edges.length} ${resource} (total: ${allItems.length})`);
+        extractionState.logs.push(`Retrieved ${pageItems.length} ${resource} (total: ${allItems.length})`);
         
         // Add a small delay to avoid hitting rate limits
         await new Promise(resolve => setTimeout(resolve, 500));
@@ -481,6 +558,325 @@ function getTypeName(resource) {
   return singular.charAt(0).toUpperCase() + singular.slice(1);
 }
 
+// Helper function to extract fields from a query
+function extractFieldsFromQuery(query) {
+  const fields = [];
+  const lines = query.split('\n');
+  let inNodeBlock = false;
+  
+  for (const line of lines) {
+    const trimmedLine = line.trim();
+    
+    if (trimmedLine.includes('node {')) {
+      inNodeBlock = true;
+      continue;
+    }
+    
+    if (inNodeBlock && trimmedLine.includes('}')) {
+      if (trimmedLine === '}') { // Single closing bracket (ending node block)
+        inNodeBlock = false;
+      }
+      continue;
+    }
+    
+    if (inNodeBlock && trimmedLine && !trimmedLine.includes('{') && !trimmedLine.includes('}')) {
+      fields.push(trimmedLine);
+    }
+  }
+  
+  return fields;
+}
+
+// Predefined query helpers
+function getPredefinedProductsQuery() {
+  return {
+    query: `
+query GetProducts($first: Int!, $after: String) {
+  products(first: $first, after: $after) {
+    pageInfo {
+      hasNextPage
+      endCursor
+    }
+    edges {
+      node {
+        id
+        title
+        handle
+        description
+        productType
+        vendor
+        status
+        tags
+        createdAt
+        updatedAt
+        publishedAt
+        onlineStoreUrl
+        featuredImage {
+          id
+          url
+          altText
+        }
+        priceRangeV2 {
+          minVariantPrice {
+            amount
+            currencyCode
+          }
+          maxVariantPrice {
+            amount
+            currencyCode
+          }
+        }
+        totalInventory
+        variants(first: 50) {
+          edges {
+            node {
+              id
+              title
+              sku
+              price
+              compareAtPrice
+              inventoryQuantity
+              barcode
+              availableForSale
+              taxable
+              selectedOptions {
+                name
+                value
+              }
+            }
+          }
+        }
+        images(first: 20) {
+          edges {
+            node {
+              id
+              url
+              width
+              height
+              altText
+            }
+          }
+        }
+        metafields(first: 10) {
+          edges {
+            node {
+              id
+              namespace
+              key
+              value
+              type
+            }
+          }
+        }
+      }
+    }
+  }
+}`,
+    fields: ["id", "title", "handle", "description", "productType", "vendor", "status", "tags", 
+             "createdAt", "updatedAt", "publishedAt", "onlineStoreUrl", "featuredImage", 
+             "priceRangeV2", "totalInventory", "variants", "images", "metafields"]
+  };
+}
+
+function getPredefinedOrdersQuery() {
+  return {
+    query: `
+query GetOrders($first: Int!, $after: String) {
+  orders(first: $first, after: $after) {
+    pageInfo {
+      hasNextPage
+      endCursor
+    }
+    edges {
+      node {
+        id
+        name
+        email
+        phone
+        closed
+        cancelReason
+        cancelledAt
+        processedAt
+        createdAt
+        updatedAt
+        displayFulfillmentStatus
+        displayFinancialStatus
+        note
+        tags
+        subtotalLineItemsQuantity
+        totalPriceSet {
+          shopMoney {
+            amount
+            currencyCode
+          }
+        }
+        subtotalPriceSet {
+          shopMoney {
+            amount
+            currencyCode
+          }
+        }
+        totalShippingPriceSet {
+          shopMoney {
+            amount
+            currencyCode
+          }
+        }
+        totalTaxSet {
+          shopMoney {
+            amount
+            currencyCode
+          }
+        }
+        totalDiscountsSet {
+          shopMoney {
+            amount
+            currencyCode
+          }
+        }
+        customer {
+          id
+          firstName
+          lastName
+          email
+          phone
+        }
+        shippingAddress {
+          firstName
+          lastName
+          address1
+          address2
+          city
+          province
+          country
+          zip
+          phone
+        }
+        lineItems(first: 50) {
+          edges {
+            node {
+              id
+              title
+              quantity
+              originalTotalSet {
+                shopMoney {
+                  amount
+                  currencyCode
+                }
+              }
+              discountedTotalSet {
+                shopMoney {
+                  amount
+                  currencyCode
+                }
+              }
+              variant {
+                id
+                title
+                sku
+                price
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}`,
+    fields: ["id", "name", "email", "phone", "closed", "cancelReason", "cancelledAt", "processedAt", 
+             "createdAt", "updatedAt", "displayFulfillmentStatus", "displayFinancialStatus", "note", 
+             "tags", "subtotalLineItemsQuantity", "totalPriceSet", "subtotalPriceSet", 
+             "totalShippingPriceSet", "totalTaxSet", "totalDiscountsSet", "customer", 
+             "shippingAddress", "lineItems"]
+  };
+}
+
+function getPredefinedCustomersQuery() {
+  return {
+    query: `
+query GetCustomers($first: Int!, $after: String) {
+  customers(first: $first, after: $after) {
+    pageInfo {
+      hasNextPage
+      endCursor
+    }
+    edges {
+      node {
+        id
+        firstName
+        lastName
+        displayName
+        email
+        phone
+        createdAt
+        updatedAt
+        verifiedEmail
+        taxExempt
+        taxExemptions
+        state
+        tags
+        note
+        defaultAddress {
+          id
+          address1
+          address2
+          city
+          province
+          country
+          zip
+          phone
+        }
+        addresses(first: 10) {
+          edges {
+            node {
+              id
+              address1
+              address2
+              city
+              province
+              country
+              zip
+              phone
+            }
+          }
+        }
+        orders(first: 5) {
+          edges {
+            node {
+              id
+              name
+              processedAt
+              totalPriceSet {
+                shopMoney {
+                  amount
+                  currencyCode
+                }
+              }
+              displayFinancialStatus
+            }
+          }
+        }
+        metafields(first: 10) {
+          edges {
+            node {
+              id
+              namespace
+              key
+              value
+              type
+            }
+          }
+        }
+      }
+    }
+  }
+}`,
+    fields: ["id", "firstName", "lastName", "displayName", "email", "phone", "createdAt", "updatedAt", 
+             "verifiedEmail", "taxExempt", "taxExemptions", "state", "tags", "note", "defaultAddress", 
+             "addresses", "orders", "metafields"]
+  };
+}
+
 // Serve the main HTML file for all other routes
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
@@ -488,5 +884,6 @@ app.get('*', (req, res) => {
 
 // Start the server
 app.listen(PORT, () => {
-  console.log(`Shopify Data Extractor running on http://localhost:${PORT}`);
+  console.log(`Server running on port ${PORT}`);
+  console.log(`Open http://localhost:${PORT} in your browser`);
 });
