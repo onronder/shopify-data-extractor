@@ -1083,32 +1083,120 @@ document.addEventListener('DOMContentLoaded', () => {
     }, 1000); // Check every second
   }
   
-  // Download the extracted data as JSON
+  // Download the extracted data as JSON or CSV
   function downloadExtractedData() {
     if (!appState.extractionData) {
       alert('No data available to download');
       return;
     }
     
-    // Create a JSON blob
-    const dataStr = JSON.stringify(appState.extractionData, null, 2);
-    const blob = new Blob([dataStr], { type: 'application/json' });
+    // Ask user for format preference
+    const format = confirm('Download as CSV? (Click Cancel for JSON format)') ? 'csv' : 'json';
     
-    // Create a download link
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${appState.selectedResource}_${new Date().toISOString().split('T')[0]}.json`;
+    if (format === 'json') {
+      // Create a JSON blob
+      const dataStr = JSON.stringify(appState.extractionData, null, 2);
+      const blob = new Blob([dataStr], { type: 'application/json' });
+      
+      // Create a download link
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${appState.selectedResource}_${new Date().toISOString().split('T')[0]}.json`;
+      
+      // Trigger download
+      document.body.appendChild(a);
+      a.click();
+      
+      // Clean up
+      setTimeout(() => {
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }, 100);
+    } else {
+      // Convert JSON to CSV
+      const csv = convertToCSV(appState.extractionData);
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      
+      // Create a download link
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${appState.selectedResource}_${new Date().toISOString().split('T')[0]}.csv`;
+      
+      // Trigger download
+      document.body.appendChild(a);
+      a.click();
+      
+      // Clean up
+      setTimeout(() => {
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }, 100);
+    }
+  }
+  
+  // Helper function to convert JSON to CSV
+  function convertToCSV(jsonData) {
+    if (!jsonData || !jsonData.length) {
+      return '';
+    }
     
-    // Trigger download
-    document.body.appendChild(a);
-    a.click();
+    // Get all possible headers from all objects
+    const headers = new Set();
+    jsonData.forEach(item => {
+      Object.keys(flattenObject(item)).forEach(key => headers.add(key));
+    });
     
-    // Clean up
-    setTimeout(() => {
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-    }, 100);
+    const headerRow = Array.from(headers).join(',');
+    
+    // Create rows
+    const rows = jsonData.map(item => {
+      const flatItem = flattenObject(item);
+      return Array.from(headers)
+        .map(header => {
+          let value = flatItem[header] === undefined ? '' : flatItem[header];
+          
+          // Handle values that need quotes (strings with commas, quotes, or newlines)
+          if (typeof value === 'string') {
+            if (value.includes('"')) {
+              value = value.replace(/"/g, '""');
+            }
+            if (value.includes(',') || value.includes('"') || value.includes('\n')) {
+              value = `"${value}"`;
+            }
+          }
+          
+          return value;
+        })
+        .join(',');
+    });
+    
+    // Combine header and rows
+    return [headerRow, ...rows].join('\n');
+  }
+  
+  // Helper function to flatten nested objects for CSV conversion
+  function flattenObject(obj, prefix = '') {
+    return Object.keys(obj).reduce((acc, key) => {
+      const pre = prefix.length ? `${prefix}.` : '';
+      
+      if (typeof obj[key] === 'object' && obj[key] !== null && !Array.isArray(obj[key])) {
+        Object.assign(acc, flattenObject(obj[key], `${pre}${key}`));
+      } else if (Array.isArray(obj[key])) {
+        // For arrays, join the values with a semicolon
+        acc[`${pre}${key}`] = obj[key].map(item => {
+          if (typeof item === 'object' && item !== null) {
+            return JSON.stringify(item);
+          }
+          return item;
+        }).join('; ');
+      } else {
+        acc[`${pre}${key}`] = obj[key];
+      }
+      
+      return acc;
+    }, {});
   }
   
   // Helper function to get status text
