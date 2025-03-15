@@ -230,3 +230,53 @@
   color: #6c757d;
   margin-left: 0.5rem;
 }
+
+/* JSON Syntax Highlighting */
+.json-content {
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+.json-key {
+  color: #0066cc;
+  font-weight: bold;
+}
+
+.json-string {
+  color: #008000;
+}
+
+.json-number {
+  color: #aa00aa;
+}
+
+.json-boolean {
+  color: #0000ff;
+  font-weight: bold;
+}
+
+.json-null {
+  color: #ff0000;
+  font-weight: bold;
+}
+
+/* Make the modal content area have a light gray background for better readability */
+#json-view-content {
+  background-color: #f8f9fa;
+  border-radius: 4px;
+  padding: 15px;
+  font-size: 14px;
+}
+
+/* Style for the copy button */
+#copy-json-btn:hover {
+  background-color: #e9ecef;
+}
+
+/* Style for the record count badge */
+#json-record-count {
+  font-size: 0.9rem;
+  padding: 0.4rem 0.6rem;
+}

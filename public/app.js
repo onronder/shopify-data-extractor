@@ -1155,61 +1155,98 @@ document.addEventListener('DOMContentLoaded', () => {
   
   // Helper function to convert JSON to CSV
   function convertToCSV(jsonData) {
-    if (!jsonData || !jsonData.length) {
+    if (!Array.isArray(jsonData) || jsonData.length === 0) {
       return '';
     }
     
-    // Get all possible headers from all objects
-    const headers = new Set();
-    jsonData.forEach(item => {
-      Object.keys(flattenObject(item)).forEach(key => headers.add(key));
-    });
-    
-    const headerRow = Array.from(headers).join(',');
-    
-    // Create rows
-    const rows = jsonData.map(item => {
-      const flatItem = flattenObject(item);
-      return Array.from(headers)
-        .map(header => {
-          let value = flatItem[header] === undefined ? '' : flatItem[header];
-          
-          // Handle values that need quotes (strings with commas, quotes, or newlines)
-          if (typeof value === 'string') {
-            if (value.includes('"')) {
-              value = value.replace(/"/g, '""');
-            }
-            if (value.includes(',') || value.includes('"') || value.includes('\n')) {
-              value = `"${value}"`;
-            }
-          }
-          
-          return value;
-        })
-        .join(',');
-    });
-    
-    // Combine header and rows
-    return [headerRow, ...rows].join('\n');
+    try {
+      // Collect all unique keys from all flattened objects
+      const headers = new Set();
+      jsonData.forEach(item => {
+        Object.keys(flattenObject(item)).forEach(key => headers.add(key));
+      });
+      
+      const headerArray = Array.from(headers);
+      
+      // Create header row with proper escaping
+      const headerRow = headerArray.map(header => escapeCsvValue(header)).join(',');
+      
+      // Create data rows
+      const rows = jsonData.map(item => {
+        const flatItem = flattenObject(item);
+        return headerArray.map(header => {
+          const value = flatItem[header] !== undefined ? flatItem[header] : '';
+          return escapeCsvValue(value);
+        }).join(',');
+      });
+      
+      // Add UTF-8 BOM for Excel compatibility and use CRLF for line breaks (RFC 4180)
+      const BOM = '\uFEFF';
+      return BOM + [headerRow, ...rows].join('\r\n');
+    } catch (error) {
+      console.error('Error converting to CSV:', error);
+      alert('Error creating CSV: ' + error.message);
+      return '';
+    }
   }
   
-  // Helper function to flatten nested objects for CSV conversion
+  /**
+   * Escapes special characters in CSV values according to RFC 4180
+   * @param {any} value - Value to escape
+   * @returns {string} Escaped CSV value
+   */
+  function escapeCsvValue(value) {
+    if (value === null || value === undefined) {
+      return '';
+    }
+    
+    const stringValue = String(value);
+    
+    // If the value contains commas, newlines, or double quotes, enclose in double quotes
+    if (stringValue.includes(',') || stringValue.includes('\n') || stringValue.includes('\r') || stringValue.includes('"')) {
+      // Replace double quotes with two double quotes (escape them)
+      return `"${stringValue.replace(/"/g, '""')}"`;
+    }
+    
+    return stringValue;
+  }
+  
+  /**
+   * Flattens nested objects for CSV conversion
+   * @param {Object} obj - Object to flatten
+   * @param {string} prefix - Prefix for nested keys
+   * @returns {Object} Flattened object
+   */
   function flattenObject(obj, prefix = '') {
+    if (obj === null || obj === undefined) {
+      return {};
+    }
+    
     return Object.keys(obj).reduce((acc, key) => {
       const pre = prefix.length ? `${prefix}.` : '';
+      const value = obj[key];
       
-      if (typeof obj[key] === 'object' && obj[key] !== null && !Array.isArray(obj[key])) {
-        Object.assign(acc, flattenObject(obj[key], `${pre}${key}`));
-      } else if (Array.isArray(obj[key])) {
-        // For arrays, join the values with a semicolon
-        acc[`${pre}${key}`] = obj[key].map(item => {
-          if (typeof item === 'object' && item !== null) {
+      if (value === null || value === undefined) {
+        acc[`${pre}${key}`] = '';
+      } else if (typeof value === 'object' && !Array.isArray(value)) {
+        // Recursively flatten nested objects
+        Object.assign(acc, flattenObject(value, `${pre}${key}`));
+      } else if (Array.isArray(value)) {
+        // Format arrays as pipe-separated values (more standard than semicolons)
+        acc[`${pre}${key}`] = value.map(item => {
+          if (item === null || item === undefined) {
+            return '';
+          } else if (typeof item === 'object') {
             return JSON.stringify(item);
           }
-          return item;
-        }).join('; ');
+          return String(item);
+        }).join('|');
+      } else if (value instanceof Date) {
+        // Format dates as ISO strings
+        acc[`${pre}${key}`] = value.toISOString();
       } else {
-        acc[`${pre}${key}`] = obj[key];
+        // Convert all other values to strings
+        acc[`${pre}${key}`] = String(value);
       }
       
       return acc;
@@ -1425,23 +1462,72 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
   
-  // View JSON data
+  // View JSON data with syntax highlighting
   function viewJsonData() {
     if (!appState.extractionData) {
       alert('No data available to view');
       return;
     }
     
-    // Format JSON with syntax highlighting
-    const formattedJson = JSON.stringify(appState.extractionData, null, 2);
+    try {
+      // Format JSON with syntax highlighting
+      const formattedJson = formatJsonForDisplay(appState.extractionData);
+      
+      // Populate JSON view modal with highlighted HTML
+      jsonViewContent.innerHTML = formattedJson;
+      jsonRecordCount.textContent = `${appState.extractionData.length} records`;
+      
+      // Add a class to enable styling
+      jsonViewContent.classList.add('json-content');
+      
+      // Show modal using Bootstrap
+      const modal = new bootstrap.Modal(jsonViewModal);
+      modal.show();
+    } catch (error) {
+      console.error('Error displaying JSON:', error);
+      alert('Error displaying JSON data: ' + error.message);
+      
+      // Fallback to plain text if highlighting fails
+      try {
+        jsonViewContent.textContent = JSON.stringify(appState.extractionData, null, 2);
+      } catch (e) {
+        jsonViewContent.textContent = 'Error formatting JSON data';
+      }
+    }
+  }
+  
+  /**
+   * Formats JSON data for display with syntax highlighting
+   * @param {Object} json - JSON data to format
+   * @returns {string} HTML formatted JSON with syntax highlighting
+   */
+  function formatJsonForDisplay(json) {
+    if (!json) return '';
     
-    // Populate JSON view modal
-    jsonViewContent.textContent = formattedJson;
-    jsonRecordCount.textContent = `${appState.extractionData.length} records`;
+    // First, stringify the JSON with proper indentation
+    const jsonString = JSON.stringify(json, null, 2);
     
-    // Show modal using Bootstrap
-    const modal = new bootstrap.Modal(jsonViewModal);
-    modal.show();
+    // Apply syntax highlighting with HTML
+    return jsonString
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g, 
+        match => {
+          let cls = 'json-number';
+          if (/^"/.test(match)) {
+            if (/:$/.test(match)) {
+              cls = 'json-key';
+            } else {
+              cls = 'json-string';
+            }
+          } else if (/true|false/.test(match)) {
+            cls = 'json-boolean';
+          } else if (/null/.test(match)) {
+            cls = 'json-null';
+          }
+          return `<span class="${cls}">${match}</span>`;
+        });
   }
   
   // Copy JSON to clipboard
